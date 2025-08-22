@@ -27,6 +27,8 @@ sources:
     # This is a unique, friendly name for your database. Use this name in the 'jobs' section.
     # Example: 'production_db', 'staging_db', 'billing_api_db'.
     production_db:
+      # Supported values: "postgres", "mysql"
+      driver: "postgres"
       # The hostname or IP address of your database server.
       host: "prod.db.internal"
       # The port your database is running on (e.g., 5432 for PostgreSQL).
@@ -41,6 +43,7 @@ sources:
       name: "production_database"
 
     staging_db:
+      driver: "mysql"
       host: "staging.db.internal"
       port: 5432
       user: "backup_user"

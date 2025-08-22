@@ -1,10 +1,10 @@
 package cmd
 
 import (
-	"fmt"
 	"log"
 
 	"github.com/spf13/cobra"
+	"github.com/tderick/backup-companion-go/internal/backup"
 	"github.com/tderick/backup-companion-go/internal/config"
 )
 
@@ -24,9 +24,8 @@ to quickly create a Cobra application.`,
 		if err != nil {
 			log.Fatalf("failed to load config: %v", err)
 		}
-		fmt.Printf("Loaded config: %+v\n", cfg)
 
-		fmt.Println("backup called")
+		backup.Execute(cmd.Context(), cfg)
 	},
 }
 
