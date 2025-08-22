@@ -5,7 +5,7 @@ import (
 	"log"
 
 	"github.com/spf13/cobra"
-	"github.com/tderick/backup-companion/internal/config"
+	"github.com/tderick/backup-companion-go/internal/config"
 )
 
 // backupCmd represents the backup command

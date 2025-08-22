@@ -1,4 +1,4 @@
-module github.com/tderick/backup-companion
+module github.com/tderick/backup-companion-go
 
 go 1.24.6
 
