@@ -1,0 +1,146 @@
+# -----------------------------------------------------------------------------
+# Welcome to the Backup Companion Configuration File
+#
+# This file defines everything the backup tool needs to know:
+#   1. SOURCES: What can be backed up (your databases and directories).
+#   2. DESTINATIONS: Where the backups should be sent (your S3 buckets).
+#   3. JOBS: Which sources to back up and which destinations to send them to.
+#
+# How to use:
+#   - Rename this file from 'config.template.yaml' to 'config.yaml'.
+#   - Fill in your specific details for each section.
+#   - Run the tool by pointing it to a job name, e.g., `backup-companion backup my_job_name`
+#
+# For more information, visit the project documentation at [YOUR_PROJECT_URL]
+# -----------------------------------------------------------------------------
+
+# -----------------------------------------------------------------------------
+# STEP 1: DEFINE ALL POSSIBLE SOURCES
+#
+# In this section, you define every database and directory that the tool might
+# need to back up. Each source is given a unique name (e.g., `production_db`)
+# which you will use later to reference it in your backup jobs.
+# -----------------------------------------------------------------------------
+sources:
+  # 'databases' is a collection of all your database connections.
+  databases:
+    # This is a unique, friendly name for your database. Use this name in the 'jobs' section.
+    # Example: 'production_db', 'staging_db', 'billing_api_db'.
+    production_db:
+      # The hostname or IP address of your database server.
+      host: "prod.db.internal"
+      # The port your database is running on (e.g., 5432 for PostgreSQL).
+      port: 5432
+      # The database user with backup privileges.
+      user: "backup_user"
+      # The password for the database user.
+      # TIP: For better security, you can often leave this blank and set it
+      # using an environment variable that Viper can read.
+      password: "secret_password_prod"
+      # The specific name of the database you want to back up.
+      name: "production_database"
+
+    staging_db:
+      host: "staging.db.internal"
+      port: 5432
+      user: "backup_user"
+      password: "secret_password_staging"
+      name: "staging_database"
+
+  # 'directories' is a collection of all the filesystem paths you might want to back up.
+  directories:
+    # A unique, friendly name for your directory source.
+    main_app_files:
+      # The absolute path to the directory you want to include in the backup.
+      path: "/var/www/my-app"
+
+    user_uploads:
+      path: "/var/www/my-app/uploads"
+
+    nginx_configs:
+      path: "/etc/nginx"
+
+# -----------------------------------------------------------------------------
+# STEP 2: DEFINE ALL POSSIBLE DESTINATIONS
+#
+# This is where you configure your cloud storage providers. Currently, S3-compatible
+# storage is supported. Each destination is given a unique name so you can
+# easily reference it in your backup jobs.
+# -----------------------------------------------------------------------------
+destinations:
+  # A unique, friendly name for this storage destination.
+  contabo_primary:
+    # The name of the S3 provider (for logging or future provider-specific logic).
+    provider: "s3"
+    # The name of the S3 bucket to upload backups to.
+    bucketName: "main-backup-bucket"
+    # Your S3 Access Key ID.
+    accessKeyId: "key_for_contabo"
+    # Your S3 Secret Access Key.
+    # TIP: This is a secret! It's highly recommended to set this via an
+    # environment variable instead of putting it in this file.
+    secretAccessKey: "secret_for_contabo"
+    # The AWS region of your bucket (e.g., 'us-east-1', 'eu-central-1').
+    region: "eu-2"
+    # For non-AWS S3 providers, you must provide the full endpoint URL.
+    # For AWS S3, this can be omitted.
+    endpointUrl: "https://s3.eu-2.contabo.com"
+
+  # You can define multiple destinations and send backups to all of them!
+  aws_archive:
+    provider: "s3"
+    bucketName: "long-term-archive-bucket"
+    accessKeyId: "key_for_aws"
+    secretAccessKey: "secret_for_aws"
+    region: "us-east-1"
+    # No endpointUrl needed for standard AWS.
+
+# -----------------------------------------------------------------------------
+# STEP 3: DEFINE THE BACKUP JOBS
+#
+# A 'job' ties everything together. It defines a specific backup task by
+# referencing sources and destinations you defined above. You run a job from
+# the command line using its name.
+# -----------------------------------------------------------------------------
+jobs:
+  # This is the name of the job you will run, e.g., `backup-companion backup full_backup`.
+  full_backup:
+    # Defines the local filename for the compressed backup file.
+    # The `{{timestamp}}` placeholder will be automatically replaced with the
+    # current date and time (e.g., YYYY-MM-DD-HHMMSS).
+    output: "/backups/full-backup-{{timestamp}}.zip"
+
+    # A list of the database sources (from Step 1) to include in this job.
+    # These must match the names you defined under 'sources.databases'.
+    databases:
+      - "production_db"
+
+    # A list of the directory sources (from Step 1) to include in this job.
+    # These must match the names you defined under 'sources.directories'.
+    directories:
+      - "main_app_files"
+      - "nginx_configs"
+
+    # A list of the destinations (from Step 2) where the final backup file
+    # will be uploaded. The backup will be sent to ALL destinations listed here.
+    destinations:
+      - "contabo_primary"
+      - "aws_archive"
+
+  # An example of a job that only backs up the database.
+  database_only:
+    output: "/backups/database-only-{{timestamp}}.zip"
+    databases:
+      - "production_db"
+    # The 'directories' key is omitted, so no directories will be backed up.
+    destinations:
+      - "contabo_primary"
+
+  # An example of a job that only backs up files.
+  files_only:
+    output: "/backups/files-only-{{timestamp}}.zip"
+    # The 'databases' key is omitted, so no databases will be backed up.
+    directories:
+      - "main_app_files"
+    destinations:
+      - "contabo_primary"
