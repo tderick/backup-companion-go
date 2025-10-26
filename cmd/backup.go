@@ -25,6 +25,11 @@ to quickly create a Cobra application.`,
 			log.Fatalf("failed to load config: %v", err)
 		}
 
+		// Validate all remote destinations after loading the config
+		if err := config.ValidateAllDestinations(cmd.Context(), cfg); err != nil {
+			log.Fatalf("failed to validate remote destinations: %v", err)
+		}
+		
 		backup.Execute(cmd.Context(), cfg)
 	},
 }

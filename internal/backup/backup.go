@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/tderick/backup-companion-go/internal/backup/database"
 	"github.com/tderick/backup-companion-go/internal/backup/filesystem"
+	"github.com/tderick/backup-companion-go/internal/backup/remotestorage"
 	"github.com/tderick/backup-companion-go/internal/backup/util"
 	"github.com/tderick/backup-companion-go/internal/models"
 )
@@ -54,7 +56,28 @@ func backupJob(ctx context.Context, cfg *models.Config, jobName string, job mode
 	}
 	fmt.Printf("Successfully created archive for job %q at %q\n", jobName, archivePath)
 
-	// TODO: Add destination upload logic here, possibly using another sub-package `uploader`
+	objectKey := filepath.Base(archivePath)
+
+	for _, destName := range job.Destinations {
+		if destConfig, ok := cfg.Destinations[destName]; ok {
+			fmt.Printf("Uploading archive %q to destination %q (%s)...\n", objectKey, destName, destConfig.Provider)
+
+			s3Client, err := remotestorage.NewS3Client(ctx, destConfig)
+			if err != nil {
+				fmt.Printf("Failed to create S3 client for destination %q: %v\n", destName, err)
+				continue // Try next destination
+			}
+
+			if err := s3Client.UploadFile(ctx, archivePath, objectKey); err != nil {
+				fmt.Printf("Failed to upload archive %q to destination %q: %v\n", objectKey, destName, err)
+			} else {
+				fmt.Printf("Successfully uploaded archive %q to destination %q.\n", objectKey, destName)
+			}
+		} else {
+			fmt.Printf("Error: Destination %q referenced by job %q not found in config.\n", destName, jobName)
+		}
+	}
+
 }
 
 func getJobType(job models.JobConfig) string {

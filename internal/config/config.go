@@ -1,12 +1,14 @@
 package config
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"strings"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/spf13/viper"
+	"github.com/tderick/backup-companion-go/internal/backup/remotestorage"
 	"github.com/tderick/backup-companion-go/internal/models"
 )
 
@@ -97,5 +99,27 @@ func validateReferences(cfg *models.Config) error {
 	if b.Len() > 0 {
 		return fmt.Errorf("invalid configuration:\n%s", b.String())
 	}
+	return nil
+}
+
+// ValidateAllDestinations checks connectivity for all defined S3 destinations.
+func ValidateAllDestinations(ctx context.Context, cfg *models.Config) error {
+	fmt.Println("Validating all configured remote destinations...")
+	var validationErrors []string
+	for destName, destConfig := range cfg.Destinations {
+		s3client, err := remotestorage.NewS3Client(ctx, destConfig) // NewS3Client now includes ValidateConnection
+		if err != nil {
+			validationErrors = append(validationErrors, fmt.Sprintf("Destination %q failed to establish S3 connection: %v", destName, err))
+		}
+
+		if err = s3client.ValidateConnection(ctx); err != nil {
+			validationErrors = append(validationErrors, fmt.Sprintf("Destination %q failed to establish S3 connection: %v", destName, err))
+		}
+	}
+
+	if len(validationErrors) > 0 {
+		return fmt.Errorf("some remote destinations failed validation:\n%s", strings.Join(validationErrors, "\n"))
+	}
+	fmt.Println("All remote destinations validated successfully.")
 	return nil
 }
