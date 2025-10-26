@@ -35,19 +35,19 @@ sources:
       port: 5432
       # The database user with backup privileges.
       user: "backup_user"
-      # The password for the database user.
-      # TIP: For better security, you can often leave this blank and set it
-      # using an environment variable that Viper can read.
-      password: "secret_password_prod"
+      # The password for the database user. 
+      # Recommended: Set via BACKUP_COMPANION_DB_PASSWORD_{NAME} environment variable
+      # Example: BACKUP_COMPANION_DB_PASSWORD_PRODUCTION_DB="mysecret"
+      password: ""
       # The specific name of the database you want to back up.
       name: "production_database"
 
     staging_db:
       driver: "mysql"
       host: "staging.db.internal"
-      port: 5432
+      port: 3306
       user: "backup_user"
-      password: "secret_password_staging"
+      password: ""
       name: "staging_database"
 
   # 'directories' is a collection of all the filesystem paths you might want to back up.
@@ -73,30 +73,30 @@ sources:
 destinations:
   # A unique, friendly name for this storage destination.
   contabo_primary:
-    # The name of the S3 provider (for logging or future provider-specific logic).
+    # Currently only "s3" is supported
     provider: "s3"
     # The name of the S3 bucket to upload backups to.
     bucketName: "main-backup-bucket"
     # Your S3 Access Key ID.
-    accessKeyId: "key_for_contabo"
+    # Recommended: Set via BACKUP_COMPANION_S3_KEY_{NAME} environment variable
+    # Example: BACKUP_COMPANION_S3_KEY_CONTABO_PRIMARY="mykey"
+    accessKeyId: ""
     # Your S3 Secret Access Key.
-    # TIP: This is a secret! It's highly recommended to set this via an
-    # environment variable instead of putting it in this file.
-    secretAccessKey: "secret_for_contabo"
+    # Recommended: Set via BACKUP_COMPANION_S3_SECRET_{NAME} environment variable
+    # Example: BACKUP_COMPANION_S3_SECRET_CONTABO_PRIMARY="mysecret"
+    secretAccessKey: ""
     # The AWS region of your bucket (e.g., 'us-east-1', 'eu-central-1').
     region: "eu-2"
     # For non-AWS S3 providers, you must provide the full endpoint URL.
     # For AWS S3, this can be omitted.
     endpointUrl: "https://s3.eu-2.contabo.com"
 
-  # You can define multiple destinations and send backups to all of them!
   aws_archive:
     provider: "s3"
     bucketName: "long-term-archive-bucket"
-    accessKeyId: "key_for_aws"
-    secretAccessKey: "secret_for_aws"
+    accessKeyId: ""
+    secretAccessKey: ""
     region: "us-east-1"
-    # No endpointUrl needed for standard AWS.
 
 # -----------------------------------------------------------------------------
 # STEP 3: DEFINE THE BACKUP JOBS
@@ -108,48 +108,46 @@ destinations:
 jobs:
   # This is the name of the job you will run, e.g., `backup-companion backup full_backup`.
   full_backup:
-    # Defines the local filename for the compressed backup file.
-    # The `{{timestamp}}` placeholder will be automatically replaced with the
-    # current date and time (e.g., YYYY-MM-DD-HHMMSS).
+    # The output configuration for the local backup file before upload
     output:
-      dir: "/backups/files-only"
-      name: "files-only"
+      # Local directory where backup file will be temporarily stored
+      dir: "/tmp/backups"
+      # Name format: {name}-{timestamp}.tar.gz
+      # Example: full-backup-2024-01-20-153022.tar.gz
+      name: "full-backup"
 
-    # A list of the database sources (from Step 1) to include in this job.
-    # These must match the names you defined under 'sources.databases'.
+    # List of databases to include (must match names from sources.databases)
     databases:
       - "production_db"
+      - "staging_db"
 
-    # A list of the directory sources (from Step 1) to include in this job.
-    # These must match the names you defined under 'sources.directories'.
+    # List of directories to include (must match names from sources.directories)
     directories:
       - "main_app_files"
       - "nginx_configs"
 
-    # A list of the destinations (from Step 2) where the final backup file
-    # will be uploaded. The backup will be sent to ALL destinations listed here.
+    # List of destinations to upload to (must match names from destinations)
     destinations:
       - "contabo_primary"
       - "aws_archive"
 
-  # An example of a job that only backs up the database.
+  # An example of a job that only backs up databases
   database_only:
     output:
-      dir: "/backups/files-only"
-      name: "files-only"
+      dir: "/tmp/backups"
+      name: "database-backup"
     databases:
       - "production_db"
-    # The 'directories' key is omitted, so no directories will be backed up.
     destinations:
       - "contabo_primary"
 
-  # An example of a job that only backs up files.
+  # An example of a job that only backs up files
   files_only:
     output:
-      dir: "/backups/files-only"
-      name: "files-only"
-    # The 'databases' key is omitted, so no databases will be backed up.
+      dir: "/tmp/backups"
+      name: "files-backup"
     directories:
       - "main_app_files"
+      - "nginx_configs"
     destinations:
       - "contabo_primary"

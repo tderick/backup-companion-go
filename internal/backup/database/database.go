@@ -1,11 +1,14 @@
 package database
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"database/sql"
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -24,19 +27,103 @@ func BackupDatabasesOnly(ctx context.Context, cfg *models.Config, job models.Job
 	}
 }
 
+// BackupDatabase dispatches the backup operation to the appropriate driver-specific function.
 func BackupDatabase(ctx context.Context, db models.DatabaseConfig, backupDir string) {
 	slog.Info("Performing backup for database", "db_name", db.Name, "driver", db.Driver, "backup_dir", backupDir)
-	// TODO: Implement actual database backup logic here (e.g., calling pg_dump or mysqldump).
-	// This might involve creating further sub-packages like `dbdump` or `postgres` / `mysql`.
 
-	// Example: Create a dummy file for demonstration
-	outputPath := filepath.Join(backupDir, fmt.Sprintf("%s_%s.sql", db.Name, time.Now().Format("20060102150405")))
-	dummyContent := fmt.Sprintf("-- Database backup for %s from %s:%d\n", db.Name, db.Host, db.Port)
-	if err := os.WriteFile(outputPath, []byte(dummyContent), 0644); err != nil {
-		slog.Error("Error creating dummy database backup file", "db_name", db.Name, "error", err)
-	} else {
-		slog.Info("Dummy database backup created", "db_name", db.Name, "path", outputPath)
+	// Determine file extension based on driver
+	var fileExtension string
+	switch db.Driver {
+	case "postgres":
+		fileExtension = ".pgdump" // Custom binary format
+	case "mysql":
+		fileExtension = ".sql.gz" // mysqldump produces SQL, then gzip compresses it
+	default:
+		// This case should ideally be caught by validation, but as a fallback
+		fileExtension = ".unknown.dump"
 	}
+
+	outputPath := filepath.Join(backupDir, fmt.Sprintf("%s_%s%s", db.Name, time.Now().Format("20060102150405"), fileExtension))
+
+	var err error
+	switch db.Driver {
+	case "postgres":
+		err = backupPostgres(ctx, db, outputPath)
+	case "mysql":
+		err = backupMysql(ctx, db, outputPath)
+	default:
+		err = fmt.Errorf("unsupported database driver for backup: %q", db.Driver)
+	}
+
+	if err != nil {
+		slog.Error("Database backup failed", "db_name", db.Name, "driver", db.Driver, "error", err)
+	} else {
+		slog.Info("Database backup completed successfully", "db_name", db.Name, "driver", db.Driver, "path", outputPath)
+	}
+}
+
+// backupPostgres performs a backup of a PostgreSQL database using pg_dump.
+func backupPostgres(ctx context.Context, db models.DatabaseConfig, outputPath string) error {
+	args := []string{
+		"-h", db.Host,
+		"-p", fmt.Sprintf("%d", db.Port),
+		"-U", db.User,
+		"-F", "c", // Custom format (compressed)
+		"-b", // Include large objects
+		"-v", // Verbose mode
+		"-f", outputPath,
+		db.Name,
+	}
+
+	cmd := exec.CommandContext(ctx, "pg_dump", args...)
+	cmd.Env = append(os.Environ(), fmt.Sprintf("PGPASSWORD=%s", db.Password)) // Pass password securely via env
+
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("error executing pg_dump for %q: %w\nOutput: %s", db.Name, err, string(output))
+	}
+	return nil
+}
+
+// backupMysql performs a backup of a MySQL database using mysqldump and pipes to gzip.
+func backupMysql(ctx context.Context, db models.DatabaseConfig, outputPath string) error {
+	args := []string{
+		"-h", db.Host,
+		fmt.Sprintf("-P%d", db.Port),
+		fmt.Sprintf("-u%s", db.User),
+		// --password or -p is usually omitted from args and handled by MYSQL_PWD env var for security
+		"--single-transaction", // Essential for InnoDB consistency
+		"--quick",              // Essential for large tables
+		db.Name,
+	}
+
+	cmd := exec.CommandContext(ctx, "mysqldump", args...)
+	cmd.Env = append(os.Environ(), fmt.Sprintf("MYSQL_PWD=%s", db.Password)) // Pass password securely via env
+
+	// Create the output file (e.g., .sql.gz)
+	outFile, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("error creating output file %q for MySQL backup: %w", outputPath, err)
+	}
+	defer outFile.Close() // Ensure file is closed
+
+	// Create a gzip writer to compress the mysqldump output
+	gzipWriter := gzip.NewWriter(outFile)
+	defer gzipWriter.Close() // Ensure gzip writer is closed and flushed
+
+	// Pipe mysqldump's stdout directly to the gzip writer
+	cmd.Stdout = gzipWriter
+
+	// Capture stderr for logging potential mysqldump errors
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	slog.Debug("Executing mysqldump command", "command", cmd.String())
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("error executing mysqldump for %q: %w\nStderr: %s", db.Name, err, stderr.String())
+	}
+
+	return nil
 }
 
 // ValidateConnection checks if a database connection can be established.
