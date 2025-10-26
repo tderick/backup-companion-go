@@ -3,7 +3,7 @@ package config
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 
 	"github.com/go-playground/validator/v10"
@@ -40,17 +40,19 @@ func LoadConfig(configFile string) (*models.Config, error) {
 		// This part is for printing user-friendly error messages.
 		validationErrors := err.(validator.ValidationErrors)
 
-		log.Println("ERROR: Configuration validation failed with the following errors:")
+		slog.Error("Configuration validation failed with the following errors:")
 
 		for _, fieldErr := range validationErrors {
-			// This gives you a nice, readable error.
-			// e.g., "Field 'Driver' failed on the 'required' tag"
-			fmt.Printf("  - Field '%s' in config is invalid: This field failed on the '%s' validation rule.\n", fieldErr.Namespace(), fieldErr.Tag())
+			slog.Error("Config field invalid", // Use slog.Error with structured keys
+				"field_namespace", fieldErr.Namespace(),
+				"validation_rule", fieldErr.Tag(),
+				"error", fieldErr.Error(), // Include original validation error
+			)
 		}
 		// Exit the program because the config is invalid.
-		log.Fatalf("Please correct the errors in your configuration file and try again.")
+		return nil, fmt.Errorf("please correct the errors in your configuration file and try again")
 	}
-	//log.Println("Configuration file loaded and validated successfully.")
+	slog.Info("Configuration file loaded and validated successfully.")
 
 	return &cfg, nil
 }
@@ -104,22 +106,26 @@ func validateReferences(cfg *models.Config) error {
 
 // ValidateAllDestinations checks connectivity for all defined S3 destinations.
 func ValidateAllDestinations(ctx context.Context, cfg *models.Config) error {
-	fmt.Println("Validating all configured remote destinations...")
+	slog.Info("Validating all configured remote destinations...")
 	var validationErrors []string
 	for destName, destConfig := range cfg.Destinations {
-		s3client, err := remotestorage.NewS3Client(ctx, destConfig) // NewS3Client now includes ValidateConnection
+		slog.Debug("Creating S3 client for destination", "destination", destName)
+		s3client, err := remotestorage.NewS3Client(ctx, destConfig)
 		if err != nil {
 			validationErrors = append(validationErrors, fmt.Sprintf("Destination %q failed to establish S3 connection: %v", destName, err))
+			continue
 		}
-
+		slog.Debug("Validating connection for destination", "destination", destName)
 		if err = s3client.ValidateConnection(ctx); err != nil {
 			validationErrors = append(validationErrors, fmt.Sprintf("Destination %q failed to establish S3 connection: %v", destName, err))
+		} else {
+			slog.Info("Destination validated successfully", "destination", destName)
 		}
 	}
 
 	if len(validationErrors) > 0 {
 		return fmt.Errorf("some remote destinations failed validation:\n%s", strings.Join(validationErrors, "\n"))
 	}
-	fmt.Println("All remote destinations validated successfully.")
+	slog.Info("All remote destinations validated successfully.")
 	return nil
 }

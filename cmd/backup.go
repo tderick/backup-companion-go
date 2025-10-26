@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"log"
+	"log/slog"
 
 	"github.com/spf13/cobra"
 	"github.com/tderick/backup-companion-go/internal/backup"
@@ -22,14 +22,15 @@ to quickly create a Cobra application.`,
 		// Load config using the root-level --config (cfgPath)
 		cfg, err := config.LoadConfig(cfgPath)
 		if err != nil {
-			log.Fatalf("failed to load config: %v", err)
+
+			slog.Error("failed to load config", "error", err)
 		}
 
 		// Validate all remote destinations after loading the config
 		if err := config.ValidateAllDestinations(cmd.Context(), cfg); err != nil {
-			log.Fatalf("failed to validate remote destinations: %v", err)
+			slog.Error("Failed to validate remote destinations", "error", err)
 		}
-		
+
 		backup.Execute(cmd.Context(), cfg)
 	},
 }
