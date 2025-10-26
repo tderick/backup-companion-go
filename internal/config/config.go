@@ -2,52 +2,15 @@ package config
 
 import (
 	"fmt"
+	"log"
 	"strings"
 
+	"github.com/go-playground/validator/v10"
 	"github.com/spf13/viper"
+	"github.com/tderick/backup-companion-go/internal/models"
 )
 
-type Config struct {
-	Sources      SourcesConfig                `mapstructure:"sources"`
-	Destinations map[string]DestinationConfig `mapstructure:"destinations"`
-	Jobs         map[string]JobConfig         `mapstructure:"jobs"`
-}
-
-type SourcesConfig struct {
-	Databases   map[string]DatabaseConfig  `mapstructure:"databases"`
-	Directories map[string]DirectoryConfig `mapstructure:"directories"`
-}
-
-type DatabaseConfig struct {
-	Driver   string `mapstructure:"driver"`
-	Host     string `mapstructure:"host"`
-	Port     int    `mapstructure:"port"`
-	User     string `mapstructure:"user"`
-	Password string `mapstructure:"password"`
-	Name     string `mapstructure:"name"`
-}
-
-type DirectoryConfig struct {
-	Path string `mapstructure:"path"`
-}
-
-type DestinationConfig struct {
-	Provider        string `mapstructure:"provider"`
-	BucketName      string `mapstructure:"bucketName"`
-	AccessKeyID     string `mapstructure:"accessKeyId"`
-	SecretAccessKey string `mapstructure:"secretAccessKey"`
-	Region          string `mapstructure:"region"`
-	EndpointURL     string `mapstructure:"endpointUrl"`
-}
-
-type JobConfig struct {
-	Output       string   `mapstructure:"output"`
-	Databases    []string `mapstructure:"databases"`
-	Directories  []string `mapstructure:"directories"`
-	Destinations []string `mapstructure:"destinations"`
-}
-
-func LoadConfig(configFile string) (*Config, error) {
+func LoadConfig(configFile string) (*models.Config, error) {
 	v := viper.New()
 
 	if configFile != "" {
@@ -60,7 +23,7 @@ func LoadConfig(configFile string) (*Config, error) {
 		return nil, err
 	}
 
-	var cfg Config
+	var cfg models.Config
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, err
 	}
@@ -70,15 +33,47 @@ func LoadConfig(configFile string) (*Config, error) {
 		return nil, err
 	}
 
+	validate := validator.New()
+	if err := validate.Struct(cfg); err != nil {
+		// This part is for printing user-friendly error messages.
+		validationErrors := err.(validator.ValidationErrors)
+
+		log.Println("ERROR: Configuration validation failed with the following errors:")
+
+		for _, fieldErr := range validationErrors {
+			// This gives you a nice, readable error.
+			// e.g., "Field 'Driver' failed on the 'required' tag"
+			fmt.Printf("  - Field '%s' in config is invalid: This field failed on the '%s' validation rule.\n", fieldErr.Namespace(), fieldErr.Tag())
+		}
+		// Exit the program because the config is invalid.
+		log.Fatalf("Please correct the errors in your configuration file and try again.")
+	}
+	//log.Println("Configuration file loaded and validated successfully.")
+
 	return &cfg, nil
 }
 
 // validateReferences ensures that each job only references existing databases,
 // directories, and destinations defined in the config.
-func validateReferences(cfg *Config) error {
+func validateReferences(cfg *models.Config) error {
 	var b strings.Builder
 
 	for jobName, job := range cfg.Jobs {
+		// Validate output is provided
+		if job.Output.Dir == "" || job.Output.Name == "" {
+			fmt.Fprintf(&b, "job %q requires an output dir/name\n", jobName)
+		}
+
+		// Validate at least one database or directory is specified
+		if len(job.Databases) == 0 && len(job.Directories) == 0 {
+			fmt.Fprintf(&b, "job %q requires at least one database or directory\n", jobName)
+		}
+
+		// Validate at least one destination is specified
+		if len(job.Destinations) == 0 {
+			fmt.Fprintf(&b, "job %q requires at least one destination\n", jobName)
+		}
+
 		// Databases
 		for _, db := range job.Databases {
 			if _, ok := cfg.Sources.Databases[db]; !ok {
