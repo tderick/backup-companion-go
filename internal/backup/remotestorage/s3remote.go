@@ -3,7 +3,9 @@ package remotestorage
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
+	"path/filepath"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -81,5 +83,63 @@ func (c *S3Client) ValidateConnection(ctx context.Context) error {
 		return fmt.Errorf("failed to validate S3 connection for bucket %q: %w", c.bucketName, err)
 	}
 	// If no error is returned, the connection and access to the bucket are considered valid.
+	return nil
+}
+
+func UploadArchiveToDestinations(ctx context.Context, cfg *models.Config, job models.JobConfig, archivePath string) error {
+	objectKey := filepath.Base(archivePath) // The name of the file in the S3 bucket
+
+	var uploadErrors []error
+	for _, destName := range job.Destinations {
+		if destConfig, ok := cfg.Destinations[destName]; ok {
+			slog.Info("Attempting to upload archive to destination",
+				"archive_key", objectKey,
+				"destination", destName,
+				"provider", destConfig.Provider,
+				"job_name", job.Output.Name,
+			)
+
+			s3Client, err := NewS3Client(ctx, destConfig)
+			if err != nil {
+				err := fmt.Errorf("failed to create S3 client for destination %q: %w", destName, err)
+				slog.Error("Failed to create S3 client for upload, skipping destination",
+					"destination", destName,
+					"error", err,
+					"job_name", job.Output.Name,
+				)
+				uploadErrors = append(uploadErrors, err)
+				continue
+			}
+
+			if err := s3Client.UploadFile(ctx, archivePath, objectKey); err != nil {
+				err := fmt.Errorf("failed to upload archive %q to destination %q: %w", objectKey, destName, err)
+				slog.Error("Failed to upload archive to destination",
+					"archive_key", objectKey,
+					"destination", destName,
+					"error", err,
+					"job_name", job.Output.Name,
+				)
+				uploadErrors = append(uploadErrors, err)
+			} else {
+				slog.Info("Successfully uploaded archive to destination",
+					"archive_key", objectKey,
+					"destination", destName,
+					"job_name", job.Output.Name,
+				)
+			}
+		} else {
+			err := fmt.Errorf("destination %q referenced by job %q not found in config during upload", destName, job.Output.Name)
+			slog.Error("Destination not found in config during upload (should have been caught by earlier validation)",
+				"destination", destName,
+				"job_name", job.Output.Name,
+				"error", err,
+			)
+			uploadErrors = append(uploadErrors, err)
+		}
+	}
+
+	if len(uploadErrors) > 0 {
+		return fmt.Errorf("encountered errors during archive upload: %v", uploadErrors)
+	}
 	return nil
 }
