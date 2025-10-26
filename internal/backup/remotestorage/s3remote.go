@@ -18,7 +18,6 @@ type S3Client struct {
 }
 
 func NewS3Client(ctx context.Context, cfg models.DestinationConfig) (*S3Client, error) {
-	// Load the base AWS config with region and credentials.
 	awsCfg, err := config.LoadDefaultConfig(context.Background(),
 		config.WithRegion(cfg.Region),
 		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(
@@ -47,7 +46,7 @@ func NewS3Client(ctx context.Context, cfg models.DestinationConfig) (*S3Client, 
 		client:     client,
 		bucketName: cfg.BucketName,
 	}
-	
+
 	return s3Client, nil
 }
 
@@ -81,7 +80,6 @@ func (c *S3Client) ValidateConnection(ctx context.Context) error {
 		// Provide a more descriptive error message that includes the original error.
 		return fmt.Errorf("failed to validate S3 connection for bucket %q: %w", c.bucketName, err)
 	}
-
 	// If no error is returned, the connection and access to the bucket are considered valid.
 	return nil
 }

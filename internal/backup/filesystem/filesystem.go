@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -13,17 +14,17 @@ import (
 func BackupFilesOnly(ctx context.Context, cfg *models.Config, job models.JobConfig, backupDir string) {
 	for _, dirName := range job.Directories {
 		if dirConfig, ok := cfg.Sources.Directories[dirName]; ok {
-			BackupDirectory(ctx, dirConfig, backupDir) // Pass context and dirConfig
+			BackupDirectory(ctx, dirConfig, backupDir)
 		} else {
 			// This case should ideally be caught by validateReferences
-			fmt.Printf("Error: Directory %q referenced by job %q not found in sources\n", dirName, job.Output)
+			slog.Error("Directory referenced by job not found in sources", "dirName", dirName, "job", job.Output)
 		}
 	}
 }
 
 // BackupDirectory recursively copies the contents of a source directory to the backup directory.
 func BackupDirectory(ctx context.Context, dir models.DirectoryConfig, backupDir string) {
-	fmt.Printf("Backing up directory: %q to path: %q\n", dir.Path, backupDir)
+	slog.Info("Backing up directory", "dir", dir.Path, "path", backupDir)
 
 	err := filepath.Walk(dir.Path, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -47,7 +48,7 @@ func BackupDirectory(ctx context.Context, dir models.DirectoryConfig, backupDir 
 	})
 
 	if err != nil {
-		fmt.Printf("Error backing up directory %q: %v\n", dir.Path, err)
+		slog.Error("Error backing up directory", "dir", dir.Path, "error", err)
 	}
 }
 

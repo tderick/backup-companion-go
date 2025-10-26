@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -29,7 +30,7 @@ func CreateBackupDir(output models.OutputConfig) (string, error) {
 }
 
 func CreateTarGz(sourceDir, targetFile string) error {
-	fmt.Printf("Creating archive for %q at %q\n", sourceDir, targetFile)
+	slog.Info("Creating archive", "sourceDir", sourceDir, "targetFile", targetFile)
 	file, err := os.Create(targetFile)
 	if err != nil {
 		return fmt.Errorf("failed to create archive file %q: %v", targetFile, err)

@@ -115,6 +115,7 @@ func ValidateAllDestinations(ctx context.Context, cfg *models.Config) error {
 			validationErrors = append(validationErrors, fmt.Sprintf("Destination %q failed to establish S3 connection: %v", destName, err))
 			continue
 		}
+
 		slog.Debug("Validating connection for destination", "destination", destName)
 		if err = s3client.ValidateConnection(ctx); err != nil {
 			validationErrors = append(validationErrors, fmt.Sprintf("Destination %q failed to establish S3 connection: %v", destName, err))
@@ -127,5 +128,6 @@ func ValidateAllDestinations(ctx context.Context, cfg *models.Config) error {
 		return fmt.Errorf("some remote destinations failed validation:\n%s", strings.Join(validationErrors, "\n"))
 	}
 	slog.Info("All remote destinations validated successfully.")
+	
 	return nil
 }

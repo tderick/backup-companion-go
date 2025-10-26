@@ -2,7 +2,7 @@ package backup
 
 import (
 	"context"
-	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -20,20 +20,27 @@ func Execute(ctx context.Context, cfg *models.Config) {
 }
 
 func backupJob(ctx context.Context, cfg *models.Config, jobName string, job models.JobConfig) {
-	//fmt.Printf("Starting backup job %q: %+v\n", jobName, job)
+	slog.Info("Starting backup job", "jobName", jobName, "job", job)
 
 	// Create a temporary directory for this job's backup artifacts
 	backupDir, err := util.CreateBackupDir(job.Output)
 	if err != nil {
-		fmt.Printf("Failed to create a backup directory for job %q: %v\n", jobName, err)
+		slog.Error("Failed to create a backup directory", "jobName", jobName, "error", err)
 		return
 	}
 
+	archivePath := backupDir + ".tar.gz"
+
 	defer func() {
 		if err := os.RemoveAll(backupDir); err != nil {
-			fmt.Printf("Failed to cleanup temporary backup directory %q for job %q: %v\n", backupDir, jobName, err)
+			slog.Error("Failed to cleanup temporary backup directory", "backupDir", backupDir, "jobName", jobName, "error", err)
 		} else {
-			fmt.Printf("Cleaned up temporary backup directory %q for job %q.\n", backupDir, jobName)
+			slog.Info("Cleaned up temporary backup directory", "backupDir", backupDir, "jobName", jobName)
+		}
+		if err := os.Remove(archivePath); err != nil {
+			slog.Error("Failed to cleanup archive file", "archivePath", archivePath, "jobName", jobName, "error", err)
+		} else {
+			slog.Info("Cleaned up archive file", "archivePath", archivePath, "jobName", jobName)
 		}
 	}()
 
@@ -48,33 +55,30 @@ func backupJob(ctx context.Context, cfg *models.Config, jobName string, job mode
 		database.BackupDatabasesOnly(ctx, cfg, job, backupDir)
 	}
 
-	archivePath := backupDir + ".tar.gz"
-
 	if err := util.CreateTarGz(backupDir, archivePath); err != nil {
-		fmt.Printf("Failed to create archive for job %q: %v\n", jobName, err)
+		slog.Error("Failed to create archive", "jobName", jobName, "error", err)
 		return
 	}
-	fmt.Printf("Successfully created archive for job %q at %q\n", jobName, archivePath)
+	slog.Info("Successfully created archive", "jobName", jobName, "archivePath", archivePath)
 
 	objectKey := filepath.Base(archivePath)
-
 	for _, destName := range job.Destinations {
 		if destConfig, ok := cfg.Destinations[destName]; ok {
-			fmt.Printf("Uploading archive %q to destination %q (%s)...\n", objectKey, destName, destConfig.Provider)
+			slog.Info("Uploading archive to destination", "objectKey", objectKey, "destination", destName, "provider", destConfig.Provider)
 
 			s3Client, err := remotestorage.NewS3Client(ctx, destConfig)
 			if err != nil {
-				fmt.Printf("Failed to create S3 client for destination %q: %v\n", destName, err)
+				slog.Error("Failed to create S3 client", "destination", destName, "error", err)
 				continue // Try next destination
 			}
 
 			if err := s3Client.UploadFile(ctx, archivePath, objectKey); err != nil {
-				fmt.Printf("Failed to upload archive %q to destination %q: %v\n", objectKey, destName, err)
+				slog.Error("Failed to upload archive to destination", "objectKey", objectKey, "destination", destName, "error", err)
 			} else {
-				fmt.Printf("Successfully uploaded archive %q to destination %q.\n", objectKey, destName)
+				slog.Info("Successfully uploaded archive to destination", "objectKey", objectKey, "destination", destName)
 			}
 		} else {
-			fmt.Printf("Error: Destination %q referenced by job %q not found in config.\n", destName, jobName)
+			slog.Error("Destination referenced by job not found in config", "destination", destName, "jobName", jobName)
 		}
 	}
 
